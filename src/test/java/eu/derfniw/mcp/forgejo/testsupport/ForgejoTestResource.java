@@ -1,12 +1,8 @@
 package eu.derfniw.mcp.forgejo.testsupport;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.test.common.QuarkusTestResourceLifecycleManager;
-import org.testcontainers.containers.Container;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
-
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -14,15 +10,19 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
+import org.testcontainers.containers.Container;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
 
 /**
- * Spins up a real Forgejo instance, bootstraps an admin + a regular test user,
- * registers the broker as a confidential OAuth2 application, and exposes the
- * resulting credentials as Quarkus config overrides.
- *
- * Static accessors expose fixture details (test user creds, base URL) for tests
- * that need to drive the OAuth flow as the user.
+ * Spins up a real Forgejo instance, bootstraps an admin + a regular test user, registers the broker
+ * as a confidential OAuth2 application, and exposes the resulting credentials as Quarkus config
+ * overrides.
+ * <p>
+ * Static accessors expose fixture details (test user creds, base URL) for tests that need to drive
+ * the OAuth flow as the user.
  */
 public class ForgejoTestResource implements QuarkusTestResourceLifecycleManager {
 
@@ -73,8 +73,7 @@ public class ForgejoTestResource implements QuarkusTestResourceLifecycleManager 
         return Map.of(
                 "forgejo.base-url", baseUrl,
                 "forgejo.oauth.client-id", oauthClientId,
-                "forgejo.oauth.client-secret", oauthClientSecret
-        );
+                "forgejo.oauth.client-secret", oauthClientSecret);
     }
 
     @Override
@@ -87,18 +86,41 @@ public class ForgejoTestResource implements QuarkusTestResourceLifecycleManager 
     private void createUser(String username, String password, String email, boolean admin) throws Exception {
         // The Forgejo binary in the official container lives at /usr/local/bin/forgejo and
         // must be invoked as the `git` user so it can read its data directory.
-        String[] cmd = admin
-                ? new String[]{"forgejo", "admin", "user", "create",
-                "--username", username, "--password", password, "--email", email,
-                "--admin", "--must-change-password=false"}
-                : new String[]{"forgejo", "admin", "user", "create",
-                "--username", username, "--password", password, "--email", email,
-                "--must-change-password=false"};
-        Container.ExecResult result = forgejo.execInContainer(
-                org.testcontainers.containers.ExecConfig.builder()
-                        .user("git")
-                        .command(cmd)
-                        .build());
+        String[] baseCommand = new String[] {
+            "forgejo",
+            "admin",
+            "user",
+            "create",
+            "--username",
+            username,
+            "--password",
+            password,
+            "--email",
+            email,
+            "--must-change-password=false"
+        };
+        String[] adminCommand = new String[] {
+            "forgejo",
+            "admin",
+            "user",
+            "create",
+            "--admin",
+            "--username",
+            username,
+            "--password",
+            password,
+            "--email",
+            email,
+            "--must-change-password=false"
+        };
+
+        String[] cmd = admin ? adminCommand : baseCommand;
+
+        Container.ExecResult result = forgejo.execInContainer(org.testcontainers.containers.ExecConfig.builder()
+                .user("git")
+                .command(cmd)
+                .build());
+
         if (result.getExitCode() != 0) {
             throw new RuntimeException("forgejo admin user create failed (exit " + result.getExitCode() + ")"
                     + "\nstdout: " + result.getStdout()
@@ -106,31 +128,49 @@ public class ForgejoTestResource implements QuarkusTestResourceLifecycleManager 
         }
     }
 
+    private record CreateOAuthAppRequest(String name, List<String> redirect_uris, boolean confidential_client) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record CreateOAuthAppResponse(String client_id, String client_secret) {}
+
     private void registerOAuthApp() throws Exception {
-        String body = "{\"name\":\"" + OAUTH_APP_NAME
-                + "\",\"redirect_uris\":[\"" + BROKER_REDIRECT_URI
-                + "\"],\"confidential_client\":true}";
+        ObjectMapper mapper = new ObjectMapper();
+        byte[] body =
+                mapper.writeValueAsBytes(new CreateOAuthAppRequest(OAUTH_APP_NAME, List.of(BROKER_REDIRECT_URI), true));
         String basicAuth = Base64.getEncoder()
                 .encodeToString((ADMIN_USERNAME + ":" + ADMIN_PASSWORD).getBytes(StandardCharsets.UTF_8));
-        HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/api/v1/user/applications/oauth2"))
                 .header("Authorization", "Basic " + basicAuth)
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
                 .timeout(Duration.ofSeconds(15))
-                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body))
                 .build();
-        HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-        if (resp.statusCode() / 100 != 2) {
-            throw new RuntimeException("OAuth app create failed: HTTP " + resp.statusCode() + " body=" + resp.body());
+
+        try (HttpClient http =
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+                throw new RuntimeException(
+                        "OAuth app create failed: HTTP " + resp.statusCode() + " body=" + resp.body());
+            }
+            CreateOAuthAppResponse parsed = mapper.readValue(resp.body(), CreateOAuthAppResponse.class);
+            oauthClientId = parsed.client_id();
+            oauthClientSecret = parsed.client_secret();
         }
-        JsonNode json = new ObjectMapper().readTree(resp.body());
-        oauthClientId = json.get("client_id").asText();
-        oauthClientSecret = json.get("client_secret").asText();
     }
 
-    public static String baseUrl() { return baseUrl; }
-    public static String oauthClientId() { return oauthClientId; }
-    public static String oauthClientSecret() { return oauthClientSecret; }
+    public static String baseUrl() {
+        return baseUrl;
+    }
+
+    public static String oauthClientId() {
+        return oauthClientId;
+    }
+
+    public static String oauthClientSecret() {
+        return oauthClientSecret;
+    }
 }

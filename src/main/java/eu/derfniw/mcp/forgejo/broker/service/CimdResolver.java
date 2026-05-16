@@ -4,8 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import eu.derfniw.mcp.forgejo.broker.model.CimdDocument;
 import eu.derfniw.mcp.forgejo.config.BrokerConfig;
 import jakarta.enterprise.context.ApplicationScoped;
-import org.jboss.logging.Logger;
-
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -14,6 +12,7 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.util.List;
 import java.util.Optional;
+import org.jboss.logging.Logger;
 
 /**
  * Fetches and validates a Client ID Metadata Document from the URL an MCP
@@ -52,7 +51,8 @@ public class CimdResolver {
         HttpRequest req = HttpRequest.newBuilder(uri)
                 .timeout(brokerConfig.cimd().fetchTimeout())
                 .header("Accept", "application/json")
-                .GET().build();
+                .GET()
+                .build();
 
         HttpResponse<String> resp;
         try {
@@ -76,7 +76,9 @@ public class CimdResolver {
         }
 
         validate(doc, clientIdUrl);
-        LOG.debugf("Resolved CIMD for %s (name=%s, redirects=%d)", clientIdUrl, doc.clientName(), doc.redirectUris().size());
+        LOG.debugf(
+                "Resolved CIMD for %s (name=%s, redirects=%d)",
+                clientIdUrl, doc.clientName(), doc.redirectUris().size());
         return doc;
     }
 
@@ -88,10 +90,10 @@ public class CimdResolver {
     }
 
     private static void validate(CimdDocument doc, String clientIdUrl) {
-        if (doc.clientId() == null || !doc.clientId().equals(clientIdUrl)) {
+        if (!doc.clientId().equals(clientIdUrl)) {
             throw new CimdException("CIMD client_id does not match URL: doc=" + doc.clientId() + " url=" + clientIdUrl);
         }
-        if (doc.redirectUris() == null || doc.redirectUris().isEmpty()) {
+        if (doc.redirectUris().isEmpty()) {
             throw new CimdException("CIMD must declare at least one redirect_uri: " + clientIdUrl);
         }
     }

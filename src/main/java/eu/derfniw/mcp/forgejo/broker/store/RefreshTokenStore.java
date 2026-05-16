@@ -5,7 +5,6 @@ import eu.derfniw.mcp.forgejo.config.BrokerConfig;
 import io.quarkus.redis.datasource.RedisDataSource;
 import io.quarkus.redis.datasource.value.ValueCommands;
 import jakarta.enterprise.context.ApplicationScoped;
-
 import java.util.Optional;
 
 @ApplicationScoped
@@ -30,5 +29,7 @@ public class RefreshTokenStore {
         return Optional.ofNullable(cmds.getdel(key(token)));
     }
 
-    private static String key(String token) { return PREFIX + token; }
+    private static String key(String token) {
+        return PREFIX + token;
+    }
 }

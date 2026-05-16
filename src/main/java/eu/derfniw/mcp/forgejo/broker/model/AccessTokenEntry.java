@@ -13,8 +13,7 @@ public record AccessTokenEntry(
         List<String> scope,
         ForgejoTokens forgejoTokens,
         ForgejoUser forgejoUser,
-        Instant createdAt
-) {
+        Instant createdAt) {
     public AccessTokenEntry withForgejoTokens(ForgejoTokens refreshed) {
         return new AccessTokenEntry(mcpClientId, scope, refreshed, forgejoUser, createdAt);
     }

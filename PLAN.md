@@ -72,6 +72,25 @@ See CLAUDE.md for the full architecture and OAuth flow.
   5 rejection paths via embedded JDK `HttpServer`), `CimdResolverAllowlistTest`
   (1 with `@TestProfile`). All green.
 
+#### 1.2.5 Quality gate (`quality` Maven profile) — DONE
+
+- `-Pquality` activates Error Prone (`2.49.0`), NullAway (`0.13.4`,
+  `OnlyNullMarked` + `JSpecifyMode` so only `@NullMarked` packages are
+  checked), and JaCoCo (`0.8.14`, 70% line coverage on `verify`).
+- JSpecify (`1.0.0`) added as a runtime dep; `@NullMarked` package-info files
+  in every leaf main package (`config`, `broker/{model,store,endpoint,service}`).
+- Main compile fails on any compiler warning (`failOnWarning=true`); test
+  compile keeps the standard relaxed config (EP + NullAway off, no
+  failOnWarning) so test code stays free-form.
+- `.sdkmanrc` pins Java 25 (25.0.3-tem) so the IDE's project SDK is consistent
+  with what Maven needs for `--release 25`.
+- Run via the `mvn forgejo [test-with-quality]` IntelliJ run config (goal:
+  `verify`, profile: `quality`). Terminal-based `./mvnw -Pquality verify`
+  works only if `JAVA_HOME` is Java 25 — the IDE terminal doesn't auto-pick
+  the project SDK from `.sdkmanrc`.
+- Current coverage: **0.34 / 0.70** — gate is intentionally red. Will recover
+  as Phase 1.3+ adds tested broker logic.
+
 #### 1.3 `/authorize` + `/oauth/callback` — NEXT
 
 What needs to happen:

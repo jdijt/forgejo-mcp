@@ -5,7 +5,6 @@ import eu.derfniw.mcp.forgejo.config.BrokerConfig;
 import io.quarkus.redis.datasource.RedisDataSource;
 import io.quarkus.redis.datasource.value.ValueCommands;
 import jakarta.enterprise.context.ApplicationScoped;
-
 import java.util.Optional;
 
 @ApplicationScoped
@@ -29,5 +28,7 @@ public class AuthCodeStore {
         return Optional.ofNullable(cmds.getdel(key(code)));
     }
 
-    private static String key(String code) { return PREFIX + code; }
+    private static String key(String code) {
+        return PREFIX + code;
+    }
 }

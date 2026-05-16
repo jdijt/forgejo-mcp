@@ -2,7 +2,6 @@ package eu.derfniw.mcp.forgejo.config;
 
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
-
 import java.net.URI;
 import java.util.List;
 

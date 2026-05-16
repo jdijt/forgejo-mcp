@@ -1,26 +1,25 @@
 package eu.derfniw.mcp.forgejo.broker.service;
 
-import io.quarkus.test.junit.QuarkusTest;
-import io.quarkus.test.junit.TestProfile;
-import io.quarkus.test.junit.QuarkusTestProfile;
-import jakarta.inject.Inject;
-import org.junit.jupiter.api.Test;
-
-import java.util.Map;
-
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.QuarkusTestProfile;
+import io.quarkus.test.junit.TestProfile;
+import jakarta.inject.Inject;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 @TestProfile(CimdResolverAllowlistTest.AllowlistProfile.class)
 class CimdResolverAllowlistTest {
 
-    @Inject CimdResolver resolver;
+    @Inject
+    CimdResolver resolver;
 
     @Test
     void rejectsHostNotInAllowlistBeforeFetch() {
-        CimdException e = assertThrows(CimdException.class,
-                () -> resolver.resolve("http://127.0.0.1:1/some.json"));
+        CimdException e = assertThrows(CimdException.class, () -> resolver.resolve("http://127.0.0.1:1/some.json"));
         assertTrue(e.getMessage().contains("not in allowlist"), e.getMessage());
     }
 

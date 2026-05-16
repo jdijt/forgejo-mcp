@@ -17,5 +17,4 @@ public record PendingAuth(
         String codeChallenge,
         String codeChallengeMethod,
         List<String> scope,
-        Instant createdAt
-) {}
+        Instant createdAt) {}

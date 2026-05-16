@@ -3,7 +3,6 @@ package eu.derfniw.mcp.forgejo.broker.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
-
 import java.net.URI;
 import java.util.List;
 import java.util.Optional;
@@ -25,5 +24,4 @@ public record CimdDocument(
         Optional<URI> tosUri,
         Optional<URI> policyUri,
         Optional<List<String>> contacts,
-        Optional<String> scope
-) {}
+        Optional<String> scope) {}

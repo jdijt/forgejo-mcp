@@ -17,5 +17,4 @@ public record AuthCodeEntry(
         List<String> scope,
         ForgejoTokens forgejoTokens,
         ForgejoUser forgejoUser,
-        Instant createdAt
-) {}
+        Instant createdAt) {}

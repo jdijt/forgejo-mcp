@@ -1,5 +1,9 @@
 package eu.derfniw.mcp.forgejo.broker.store;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import eu.derfniw.mcp.forgejo.broker.model.AccessTokenEntry;
 import eu.derfniw.mcp.forgejo.broker.model.AuthCodeEntry;
 import eu.derfniw.mcp.forgejo.broker.model.ForgejoTokens;
@@ -11,26 +15,30 @@ import io.quarkus.redis.datasource.RedisDataSource;
 import io.quarkus.redis.datasource.keys.KeyCommands;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
-import org.junit.jupiter.api.Test;
-
 import java.net.URI;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class BrokerStoresTest {
 
-    @Inject PendingAuthStore pendingAuthStore;
-    @Inject AuthCodeStore authCodeStore;
-    @Inject AccessTokenStore accessTokenStore;
-    @Inject RefreshTokenStore refreshTokenStore;
-    @Inject RedisDataSource redis;
+    @Inject
+    PendingAuthStore pendingAuthStore;
+
+    @Inject
+    AuthCodeStore authCodeStore;
+
+    @Inject
+    AccessTokenStore accessTokenStore;
+
+    @Inject
+    RefreshTokenStore refreshTokenStore;
+
+    @Inject
+    RedisDataSource redis;
 
     @Test
     void pendingAuthRoundTripsAndIsSingleUse() {
@@ -98,13 +106,15 @@ class BrokerStoresTest {
         Thread.sleep(50);
 
         ForgejoTokens refreshedUpstream = new ForgejoTokens(
-                "new-forgejo-access", "new-forgejo-refresh",
+                "new-forgejo-access",
+                "new-forgejo-refresh",
                 Instant.now().plusSeconds(7200).truncatedTo(ChronoUnit.MILLIS));
         AccessTokenEntry replaced = original.withForgejoTokens(refreshedUpstream);
         accessTokenStore.replacePreservingTtl(token, replaced);
 
         long ttlAfter = keyCmds.pttl("broker:access_token:" + token);
-        assertTrue(ttlAfter > 0 && ttlAfter <= ttlBefore,
+        assertTrue(
+                ttlAfter > 0 && ttlAfter <= ttlBefore,
                 "TTL preserved (not reset): before=" + ttlBefore + " after=" + ttlAfter);
 
         Optional<AccessTokenEntry> reread = accessTokenStore.get(token);

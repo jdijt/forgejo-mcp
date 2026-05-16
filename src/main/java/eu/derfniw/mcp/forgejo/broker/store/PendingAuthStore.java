@@ -4,7 +4,6 @@ import eu.derfniw.mcp.forgejo.broker.model.PendingAuth;
 import io.quarkus.redis.datasource.RedisDataSource;
 import io.quarkus.redis.datasource.value.ValueCommands;
 import jakarta.enterprise.context.ApplicationScoped;
-
 import java.time.Duration;
 import java.util.Optional;
 
@@ -28,5 +27,7 @@ public class PendingAuthStore {
         return Optional.ofNullable(cmds.getdel(key(forgejoState)));
     }
 
-    private static String key(String forgejoState) { return PREFIX + forgejoState; }
+    private static String key(String forgejoState) {
+        return PREFIX + forgejoState;
+    }
 }

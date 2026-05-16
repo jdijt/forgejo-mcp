@@ -8,7 +8,6 @@ import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
-
 import java.net.URI;
 import java.util.List;
 
@@ -19,8 +18,11 @@ import java.util.List;
 @Path("/.well-known/oauth-protected-resource/mcp")
 public class ProtectedResourceMetadataResource {
 
-    @Inject BrokerConfig broker;
-    @Inject ForgejoConfig forgejo;
+    @Inject
+    BrokerConfig broker;
+
+    @Inject
+    ForgejoConfig forgejo;
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)

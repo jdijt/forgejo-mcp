@@ -1,16 +1,15 @@
 package eu.derfniw.mcp.forgejo.config;
 
-import io.quarkus.test.junit.QuarkusTest;
-import jakarta.inject.Inject;
-import org.junit.jupiter.api.Test;
-
-import java.net.URI;
-import java.time.Duration;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
+import java.net.URI;
+import java.time.Duration;
+import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class ConfigLoadingTest {

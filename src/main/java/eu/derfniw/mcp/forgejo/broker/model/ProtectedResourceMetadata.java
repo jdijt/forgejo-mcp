@@ -3,7 +3,6 @@ package eu.derfniw.mcp.forgejo.broker.model;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
-
 import java.util.List;
 
 /**
@@ -17,5 +16,4 @@ public record ProtectedResourceMetadata(
         String resource,
         List<String> authorizationServers,
         List<String> bearerMethodsSupported,
-        List<String> scopesSupported
-) {}
+        List<String> scopesSupported) {}

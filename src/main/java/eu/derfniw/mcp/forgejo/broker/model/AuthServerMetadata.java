@@ -3,7 +3,6 @@ package eu.derfniw.mcp.forgejo.broker.model;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
-
 import java.util.List;
 
 /**
@@ -22,5 +21,4 @@ public record AuthServerMetadata(
         List<String> codeChallengeMethodsSupported,
         List<String> tokenEndpointAuthMethodsSupported,
         List<String> scopesSupported,
-        boolean clientIdMetadataDocumentSupported
-) {}
+        boolean clientIdMetadataDocumentSupported) {}

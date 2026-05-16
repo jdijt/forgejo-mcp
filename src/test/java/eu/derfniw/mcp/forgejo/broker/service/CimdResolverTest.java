@@ -1,27 +1,27 @@
 package eu.derfniw.mcp.forgejo.broker.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import com.sun.net.httpserver.HttpServer;
 import eu.derfniw.mcp.forgejo.broker.model.CimdDocument;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class CimdResolverTest {
 
-    @Inject CimdResolver resolver;
+    @Inject
+    CimdResolver resolver;
 
     private HttpServer server;
     private int port;
@@ -38,14 +38,18 @@ class CimdResolverTest {
         if (server != null) server.stop(0);
     }
 
-    private String url(String path) { return "http://127.0.0.1:" + port + path; }
+    private String url(String path) {
+        return "http://127.0.0.1:" + port + path;
+    }
 
     private void respond(String path, int status, String contentType, String body) {
         server.createContext(path, exchange -> {
             byte[] payload = body.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", contentType);
             exchange.sendResponseHeaders(status, payload.length);
-            try (OutputStream os = exchange.getResponseBody()) { os.write(payload); }
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(payload);
+            }
         });
     }
 
@@ -66,7 +70,9 @@ class CimdResolverTest {
         CimdDocument doc = resolver.resolve(cimdUrl);
         assertEquals(cimdUrl, doc.clientId());
         assertEquals("Claude", doc.clientName());
-        assertEquals(URI.create("https://claude.ai/oauth/callback"), doc.redirectUris().get(0));
+        assertEquals(
+                URI.create("https://claude.ai/oauth/callback"),
+                doc.redirectUris().get(0));
         assertTrue(doc.clientUri().isPresent());
     }
 
@@ -83,7 +89,10 @@ class CimdResolverTest {
     @Test
     void rejectsMissingRedirectUris() {
         String cimdUrl = url("/cimd/no-redirects.json");
-        respond("/cimd/no-redirects.json", 200, "application/json",
+        respond(
+                "/cimd/no-redirects.json",
+                200,
+                "application/json",
                 "{\"client_id\":\"" + cimdUrl + "\",\"client_name\":\"X\",\"redirect_uris\":[]}");
 
         CimdException e = assertThrows(CimdException.class, () -> resolver.resolve(cimdUrl));

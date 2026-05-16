@@ -6,7 +6,6 @@ import io.quarkus.redis.datasource.RedisDataSource;
 import io.quarkus.redis.datasource.value.SetArgs;
 import io.quarkus.redis.datasource.value.ValueCommands;
 import jakarta.enterprise.context.ApplicationScoped;
-
 import java.util.Optional;
 
 @ApplicationScoped
@@ -42,5 +41,7 @@ public class AccessTokenStore {
         cmds.getdel(key(token));
     }
 
-    private static String key(String token) { return PREFIX + token; }
+    private static String key(String token) {
+        return PREFIX + token;
+    }
 }

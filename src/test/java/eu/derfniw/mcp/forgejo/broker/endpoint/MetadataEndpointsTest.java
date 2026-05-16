@@ -1,13 +1,13 @@
 package eu.derfniw.mcp.forgejo.broker.endpoint;
 
-import io.quarkus.test.junit.QuarkusTest;
-import org.junit.jupiter.api.Test;
-
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
+
+import io.quarkus.test.junit.QuarkusTest;
+import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class MetadataEndpointsTest {
@@ -15,7 +15,8 @@ class MetadataEndpointsTest {
     @Test
     void authorizationServerMetadataAdvertisesRequiredFields() {
         given().accept("application/json")
-                .when().get("/.well-known/oauth-authorization-server")
+                .when()
+                .get("/.well-known/oauth-authorization-server")
                 .then()
                 .statusCode(200)
                 .contentType("application/json")
@@ -33,7 +34,8 @@ class MetadataEndpointsTest {
     @Test
     void protectedResourceMetadataPointsAtTheBrokerAS() {
         given().accept("application/json")
-                .when().get("/.well-known/oauth-protected-resource/mcp")
+                .when()
+                .get("/.well-known/oauth-protected-resource/mcp")
                 .then()
                 .statusCode(200)
                 .contentType("application/json")

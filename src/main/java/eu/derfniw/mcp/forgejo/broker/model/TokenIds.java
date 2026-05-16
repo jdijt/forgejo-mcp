@@ -11,10 +11,21 @@ public final class TokenIds {
 
     private TokenIds() {}
 
-    public static String mcpAccessToken() { return "mcp_at_" + random(); }
-    public static String mcpRefreshToken() { return "mcp_rt_" + random(); }
-    public static String mcpAuthCode() { return "mcp_ac_" + random(); }
-    public static String forgejoState() { return random(); }
+    public static String mcpAccessToken() {
+        return "mcp_at_" + random();
+    }
+
+    public static String mcpRefreshToken() {
+        return "mcp_rt_" + random();
+    }
+
+    public static String mcpAuthCode() {
+        return "mcp_ac_" + random();
+    }
+
+    public static String forgejoState() {
+        return random();
+    }
 
     private static String random() {
         byte[] buf = new byte[BYTES];
