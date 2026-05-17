@@ -12,6 +12,12 @@ public interface BrokerConfig {
 
     URI publicBaseUrl();
 
+    /** base64url-encoded 32-byte AES key used for envelope encryption of broker tokens. */
+    String tokenEncryptionKey();
+
+    @WithDefault("PT10M")
+    Duration pendingAuthTtl();
+
     @WithDefault("PT1H")
     Duration accessTokenTtl();
 

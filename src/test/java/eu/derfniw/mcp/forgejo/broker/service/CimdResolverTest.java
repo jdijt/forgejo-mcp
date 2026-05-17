@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.net.httpserver.HttpServer;
+import eu.derfniw.mcp.forgejo.broker.model.BadRequest;
 import eu.derfniw.mcp.forgejo.broker.model.CimdDocument;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -72,7 +73,7 @@ class CimdResolverTest {
         assertEquals("Claude", doc.clientName());
         assertEquals(
                 URI.create("https://claude.ai/oauth/callback"),
-                doc.redirectUris().get(0));
+                doc.redirectUris().getFirst());
         assertTrue(doc.clientUri().isPresent());
     }
 
@@ -82,7 +83,7 @@ class CimdResolverTest {
         respond("/cimd/bad-id.json", 200, "application/json", """
                 {"client_id":"https://different.example/client","client_name":"X","redirect_uris":["https://x/cb"]}""");
 
-        CimdException e = assertThrows(CimdException.class, () -> resolver.resolve(cimdUrl));
+        BadRequest e = assertThrows(BadRequest.class, () -> resolver.resolve(cimdUrl));
         assertTrue(e.getMessage().contains("client_id does not match"), e.getMessage());
     }
 
@@ -95,7 +96,7 @@ class CimdResolverTest {
                 "application/json",
                 "{\"client_id\":\"" + cimdUrl + "\",\"client_name\":\"X\",\"redirect_uris\":[]}");
 
-        CimdException e = assertThrows(CimdException.class, () -> resolver.resolve(cimdUrl));
+        BadRequest e = assertThrows(BadRequest.class, () -> resolver.resolve(cimdUrl));
         assertTrue(e.getMessage().contains("redirect_uri"), e.getMessage());
     }
 
@@ -104,7 +105,7 @@ class CimdResolverTest {
         String cimdUrl = url("/cimd/garbage.json");
         respond("/cimd/garbage.json", 200, "application/json", "<html>not json</html>");
 
-        CimdException e = assertThrows(CimdException.class, () -> resolver.resolve(cimdUrl));
+        BadRequest e = assertThrows(BadRequest.class, () -> resolver.resolve(cimdUrl));
         assertTrue(e.getMessage().contains("not valid JSON"), e.getMessage());
     }
 
@@ -112,13 +113,13 @@ class CimdResolverTest {
     void rejectsNon2xxResponses() {
         // No handler registered; server returns 404 for unknown paths.
         String cimdUrl = url("/cimd/missing.json");
-        CimdException e = assertThrows(CimdException.class, () -> resolver.resolve(cimdUrl));
+        BadRequest e = assertThrows(BadRequest.class, () -> resolver.resolve(cimdUrl));
         assertTrue(e.getMessage().contains("404"), e.getMessage());
     }
 
     @Test
     void rejectsRelativeOrSchemelessClientId() {
-        assertThrows(CimdException.class, () -> resolver.resolve("/just/a/path"));
-        assertThrows(CimdException.class, () -> resolver.resolve("not-a-url"));
+        assertThrows(BadRequest.class, () -> resolver.resolve("/just/a/path"));
+        assertThrows(BadRequest.class, () -> resolver.resolve("not-a-url"));
     }
 }

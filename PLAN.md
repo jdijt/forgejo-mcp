@@ -7,8 +7,9 @@ has the phased plan and where we are in it.
 
 Quarkus 3.35 / Java 25 MCP server wrapping Forgejo's REST API for read-only
 context gathering. OAuth broker pattern (confidential client to Forgejo
-upstream, AS to Claude downstream). CIMD-only client identification. Redis-backed
-session store. Read-only tool scope (search, browse, read).
+upstream, AS to Claude downstream). CIMD-only client identification. Stateless
+AES-GCM envelope tokens — no session store. Read-only tool scope (search,
+browse, read).
 
 See CLAUDE.md for the full architecture and OAuth flow.
 
@@ -42,17 +43,32 @@ See CLAUDE.md for the full architecture and OAuth flow.
 - Lessons: Forgejo container exits cleanly if env over-specified — minimal env
   (`USER_UID`, `USER_GID`, `INSTALL_LOCK`, `DISABLE_REGISTRATION`) just works.
 
-#### 1.1 Redis-backed broker stores — DONE
+#### 1.1 Stateless encrypted-envelope tokens — DONE (replaces Redis stores)
+
+Originally implemented as Redis-backed stores (`PendingAuthStore`,
+`AuthCodeStore`, `AccessTokenStore`, `RefreshTokenStore`). Replaced before
+Phase 1.4 with stateless AES-256-GCM envelope tokens — see decision notes in
+`docs/auth-flow.md` (planned after Phase 1.6).
 
 - Records under `broker/model/`: `ForgejoTokens`, `ForgejoUser`, `PendingAuth`,
-  `AuthCodeEntry`, `AccessTokenEntry`, `RefreshTokenEntry`, `TokenIds`.
-- Stores under `broker/store/`: `PendingAuthStore` (10-min hardcoded TTL,
-  single-use via `getdel`), `AuthCodeStore` (TTL from `BrokerConfig`,
-  single-use), `AccessTokenStore` (long TTL, non-destructive `get`,
-  `replacePreservingTtl` using SET XX KEEPTTL for silent upstream refreshes),
-  `RefreshTokenStore` (single-use rotation).
-- `BrokerStoresTest` (5 tests, all green): per-store round-trip + KEEPTTL
-  behavior verified by reading PTTL before/after.
+  `AuthCodeEntry`, `AccessTokenEntry`, `RefreshTokenEntry`. All four token
+  envelopes implement `crypto/Expirable` and carry their own `expiresAt`.
+- `broker/crypto/TokenCrypto` (`@ApplicationScoped`): JDK `AES/GCM/NoPadding`,
+  256-bit key from `broker.token-encryption-key` (base64url). Token format is
+  `<prefix><base64url(nonce(12) || ciphertext+tag(16))>`; prefix is bound as
+  AAD so tokens of one kind don't cross-decode. Expiry is enforced after
+  decrypt for `Expirable` payloads.
+- Prefixes: `mcp_at_` (access), `mcp_rt_` (refresh), `mcp_ac_` (auth code),
+  `mcp_pa_` (pending auth — used as Forgejo `state=`).
+- Tradeoffs accepted (vs the Redis design): no server-side revocation, no
+  single-use enforcement on codes / refresh tokens (TTL-bounded replay possible
+  within the window). Suits the internal-network deployment model in README.
+- `quarkus-redis-client` dependency removed; `%prod.quarkus.redis.hosts`
+  removed from `application.properties`.
+- `TokenCryptoTest` (7 tests, all green): round-trip, distinct ciphertexts
+  per encode (nonce randomisation), prefix mismatch rejected, cross-prefix
+  decode fails (AAD), tampered ciphertext rejected, expiry rejected, garbage
+  body rejected.
 
 #### 1.2 OAuth metadata + CIMD resolver — DONE
 
@@ -121,11 +137,12 @@ grant rotates refresh + mints a new access. Tests for both grants + error cases
 #### 1.5 Bearer auth filter + Forgejo bearer producer
 
 JAX-RS `ContainerRequestFilter` on `/mcp/*` validates `Authorization: Bearer
-mcp_at_...`, loads `AccessTokenEntry` from Redis, populates `SecurityContext`,
-exposes a request-scoped CDI bean returning the current Forgejo bearer
-(refreshing transparently via `replacePreservingTtl` when expired). Tests:
-fresh / garbage / expired-refreshable tokens; a probe MCP tool that returns the
-resolved Forgejo user proves end-to-end propagation.
+mcp_at_...`, decodes the envelope via `TokenCrypto` (which enforces expiry),
+populates `SecurityContext`, exposes a request-scoped CDI bean returning the
+embedded Forgejo bearer for upstream calls. Broker AT TTL is held `<=` Forgejo
+AT TTL so a single decode covers the call; refresh happens at `/token` time,
+not mid-request. Tests: fresh / garbage / expired tokens; a probe MCP tool
+that returns the resolved Forgejo user proves end-to-end propagation.
 
 #### 1.6 End-to-end happy-path test
 
@@ -147,8 +164,8 @@ with comments and diffs, then commits/releases.
 
 ### Phase 4 — Health + observability
 
-`/q/health` (readiness checks for Forgejo + Redis), structured logging,
-basic metrics.
+`/q/health` (readiness check for Forgejo upstream — the broker itself is
+stateless and needs no external store), structured logging, basic metrics.
 
 ### Phase 5 — Operator README
 
@@ -156,13 +173,16 @@ Forgejo OAuth-app registration steps, env vars, Docker deploy notes.
 
 ## Current test count
 
-21/21 green as of end of Phase 1.2.
+31/31 green as of stateless-token switch (mid-Phase 1.3 — `/authorize` done,
+`/oauth/callback` happy-path integration test still TODO).
 - `ConfigLoadingTest`: 3
 - `ForgejoTestResourceTest`: 4
-- `BrokerStoresTest`: 5
+- `TokenCryptoTest`: 7
 - `MetadataEndpointsTest`: 2
+- `AuthorizeEndpointTest`: 7
 - `CimdResolverTest`: 6
 - `CimdResolverAllowlistTest`: 1
+- `PackageLayoutTest`: 1
 
 ## Open decisions / things to pin down later
 

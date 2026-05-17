@@ -3,6 +3,7 @@ package eu.derfniw.mcp.forgejo.broker.service;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import eu.derfniw.mcp.forgejo.broker.model.BadRequest;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
@@ -19,8 +20,8 @@ class CimdResolverAllowlistTest {
 
     @Test
     void rejectsHostNotInAllowlistBeforeFetch() {
-        CimdException e = assertThrows(CimdException.class, () -> resolver.resolve("http://127.0.0.1:1/some.json"));
-        assertTrue(e.getMessage().contains("not in allowlist"), e.getMessage());
+        BadRequest e = assertThrows(BadRequest.class, () -> resolver.resolve("http://127.0.0.1:1/some.json"));
+        assertTrue(e.getMessage().contains("Host not allowed"), e.getMessage());
     }
 
     public static class AllowlistProfile implements QuarkusTestProfile {

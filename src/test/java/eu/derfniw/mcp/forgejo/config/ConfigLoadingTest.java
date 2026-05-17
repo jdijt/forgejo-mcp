@@ -37,10 +37,12 @@ class ConfigLoadingTest {
     @Test
     void brokerConfigBindsAndAppliesDefaults() {
         assertEquals(URI.create("http://localhost:8081"), broker.publicBaseUrl());
+        assertEquals(Duration.ofMinutes(10), broker.pendingAuthTtl());
         assertEquals(Duration.ofHours(1), broker.accessTokenTtl());
         assertEquals(Duration.ofSeconds(60), broker.authCodeTtl());
         assertEquals(Duration.ofDays(30), broker.refreshTokenTtl());
         assertEquals(Duration.ofSeconds(10), broker.cimd().fetchTimeout());
         assertTrue(broker.cimd().allowedHosts().isEmpty(), "no CIMD allowlist by default");
+        assertFalse(broker.tokenEncryptionKey().isBlank(), "test profile must supply an encryption key");
     }
 }

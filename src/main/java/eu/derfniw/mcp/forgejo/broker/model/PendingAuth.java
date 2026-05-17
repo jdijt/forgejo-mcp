@@ -1,14 +1,14 @@
 package eu.derfniw.mcp.forgejo.broker.model;
 
+import eu.derfniw.mcp.forgejo.broker.crypto.Expirable;
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
 
 /**
- * Server-side state held while the user is bouncing through Forgejo's consent
- * screen. Keyed in Redis by the random {@code state} value we passed to Forgejo
- * (NOT the {@code state} value Claude passed to us — that is stashed in
- * {@link #mcpState} for echo-back when we redirect Claude home).
+ * In-flight authorization request. Encrypted into the {@code state} param we hand to Forgejo;
+ * decrypted on the way back at {@code /oauth/callback}. Carries the MCP client's own state for
+ * echo-back in {@link #mcpState}.
  */
 public record PendingAuth(
         String mcpClientId,
@@ -17,4 +17,5 @@ public record PendingAuth(
         String codeChallenge,
         String codeChallengeMethod,
         List<String> scope,
-        Instant createdAt) {}
+        Instant expiresAt)
+        implements Expirable {}
