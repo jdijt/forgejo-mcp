@@ -26,25 +26,33 @@ import org.testcontainers.containers.wait.strategy.Wait;
  */
 public class ForgejoTestResource implements QuarkusTestResourceLifecycleManager {
 
-    private static final String IMAGE = "codeberg.org/forgejo/forgejo:15";
-    private static final int FORGEJO_PORT = 3000;
-
     public static final String ADMIN_USERNAME = "broker-admin";
     public static final String ADMIN_PASSWORD = "Admin-Password-1!";
     public static final String ADMIN_EMAIL = "admin@test.local";
-
     public static final String TEST_USERNAME = "tester";
     public static final String TEST_PASSWORD = "Tester-Password-1!";
     public static final String TEST_EMAIL = "tester@test.local";
-
     public static final String BROKER_REDIRECT_URI = "http://localhost:8081/oauth/callback";
     public static final String OAUTH_APP_NAME = "Forgejo MCP Broker (test)";
-
+    private static final String IMAGE = "codeberg.org/forgejo/forgejo:15";
+    private static final int FORGEJO_PORT = 3000;
     private static volatile String baseUrl;
     private static volatile String oauthClientId;
     private static volatile String oauthClientSecret;
 
     private GenericContainer<?> forgejo;
+
+    public static String baseUrl() {
+        return baseUrl;
+    }
+
+    public static String oauthClientId() {
+        return oauthClientId;
+    }
+
+    public static String oauthClientSecret() {
+        return oauthClientSecret;
+    }
 
     @Override
     public Map<String, String> start() {
@@ -128,11 +136,6 @@ public class ForgejoTestResource implements QuarkusTestResourceLifecycleManager 
         }
     }
 
-    private record CreateOAuthAppRequest(String name, List<String> redirect_uris, boolean confidential_client) {}
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private record CreateOAuthAppResponse(String client_id, String client_secret) {}
-
     private void registerOAuthApp() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         byte[] body =
@@ -162,15 +165,8 @@ public class ForgejoTestResource implements QuarkusTestResourceLifecycleManager 
         }
     }
 
-    public static String baseUrl() {
-        return baseUrl;
-    }
+    private record CreateOAuthAppRequest(String name, List<String> redirect_uris, boolean confidential_client) {}
 
-    public static String oauthClientId() {
-        return oauthClientId;
-    }
-
-    public static String oauthClientSecret() {
-        return oauthClientSecret;
-    }
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record CreateOAuthAppResponse(String client_id, String client_secret) {}
 }

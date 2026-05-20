@@ -1,8 +1,8 @@
 package eu.derfniw.mcp.forgejo.broker.endpoint;
 
 import eu.derfniw.mcp.forgejo.broker.crypto.TokenCrypto;
-import eu.derfniw.mcp.forgejo.broker.model.TokenCryptoException;
 import eu.derfniw.mcp.forgejo.broker.crypto.TokenType;
+import eu.derfniw.mcp.forgejo.broker.model.AccessTokenEntry;
 import eu.derfniw.mcp.forgejo.broker.model.AuthCodeEntry;
 import eu.derfniw.mcp.forgejo.broker.model.AuthServerMetadata;
 import eu.derfniw.mcp.forgejo.broker.model.BadRequest;
@@ -12,15 +12,22 @@ import eu.derfniw.mcp.forgejo.broker.model.ForgejoUser;
 import eu.derfniw.mcp.forgejo.broker.model.OAuthError;
 import eu.derfniw.mcp.forgejo.broker.model.PendingAuth;
 import eu.derfniw.mcp.forgejo.broker.model.ProtectedResourceMetadata;
+import eu.derfniw.mcp.forgejo.broker.model.RefreshTokenEntry;
+import eu.derfniw.mcp.forgejo.broker.model.TokenCryptoException;
+import eu.derfniw.mcp.forgejo.broker.model.TokenError;
+import eu.derfniw.mcp.forgejo.broker.model.TokenResponse;
 import eu.derfniw.mcp.forgejo.broker.model.UpstreamFailure;
-import eu.derfniw.mcp.forgejo.broker.service.CimdResolver;
 import eu.derfniw.mcp.forgejo.broker.service.BrokerUris;
+import eu.derfniw.mcp.forgejo.broker.service.CimdResolver;
 import eu.derfniw.mcp.forgejo.broker.service.ForgejoOAuthClient;
 import eu.derfniw.mcp.forgejo.config.BrokerConfig;
 import eu.derfniw.mcp.forgejo.config.ForgejoConfig;
 import io.quarkus.logging.Log;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.FormParam;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
@@ -28,10 +35,15 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriBuilder;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -68,6 +80,11 @@ public class OAuthResource {
     // Discovery metadata
     // ---------------------------------------------------------------------
 
+    private static List<String> parseScopes(@Nullable String scope) {
+        if (scope == null || scope.isBlank()) return List.of();
+        return Arrays.stream(scope.trim().split("\\s+")).distinct().toList();
+    }
+
     @GET
     @Path("/.well-known/oauth-authorization-server")
     @Produces(MediaType.APPLICATION_JSON)
@@ -84,6 +101,10 @@ public class OAuthResource {
                 true);
     }
 
+    // ---------------------------------------------------------------------
+    // Authorization endpoint — downstream-facing
+    // ---------------------------------------------------------------------
+
     @GET
     @Path("/.well-known/oauth-protected-resource/mcp")
     @Produces(MediaType.APPLICATION_JSON)
@@ -96,7 +117,7 @@ public class OAuthResource {
     }
 
     // ---------------------------------------------------------------------
-    // Authorization endpoint — downstream-facing
+    // Forgejo callback — upstream-facing
     // ---------------------------------------------------------------------
 
     @GET
@@ -172,10 +193,6 @@ public class OAuthResource {
         return Response.status(Response.Status.FOUND).location(forgejoAuthorize).build();
     }
 
-    // ---------------------------------------------------------------------
-    // Forgejo callback — upstream-facing
-    // ---------------------------------------------------------------------
-
     @GET
     @Path("/oauth/callback")
     public Response oauthCallback(
@@ -205,8 +222,7 @@ public class OAuthResource {
             user = forgejoOAuth.fetchUser(tokens.accessToken());
         } catch (UpstreamFailure e) {
             // Forgejo failed; we have enough context to tell the client via the OAuth redirect.
-            throw new OAuthError(
-                    pending.redirectUri(), pending.mcpState(), "server_error", "upstream exchange failed");
+            throw new OAuthError(pending.redirectUri(), pending.mcpState(), "server_error", "upstream exchange failed");
         }
 
         AuthCodeEntry authCode = new AuthCodeEntry(
@@ -227,8 +243,130 @@ public class OAuthResource {
         return Response.status(Response.Status.FOUND).location(target.build()).build();
     }
 
-    private static List<String> parseScopes(@Nullable String scope) {
-        if (scope == null || scope.isBlank()) return List.of();
-        return Arrays.stream(scope.trim().split("\\s+")).distinct().toList();
+    // ---------------------------------------------------------------------
+    // Token endpoint — downstream-facing
+    // ---------------------------------------------------------------------
+
+    @POST
+    @Path("/token")
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Produces(MediaType.APPLICATION_JSON)
+    public TokenResponse token(
+            @FormParam("grant_type") @Nullable String grantType,
+            @FormParam("code") @Nullable String code,
+            @FormParam("redirect_uri") @Nullable String redirectUri,
+            @FormParam("client_id") @Nullable String clientId,
+            @FormParam("code_verifier") @Nullable String codeVerifier,
+            @FormParam("refresh_token") @Nullable String refreshToken) {
+
+        if (grantType == null || grantType.isBlank()) {
+            throw new TokenError("invalid_request", "missing grant_type");
+        }
+        return switch (grantType) {
+            case "authorization_code" -> authorizationCodeGrant(code, redirectUri, clientId, codeVerifier);
+            case "refresh_token" -> refreshTokenGrant(refreshToken, clientId);
+            default -> throw new TokenError("unsupported_grant_type", "grant_type '" + grantType + "' not supported");
+        };
+    }
+
+    private TokenResponse authorizationCodeGrant(
+            @Nullable String code,
+            @Nullable String redirectUri,
+            @Nullable String clientId,
+            @Nullable String codeVerifier) {
+        if (code == null || code.isBlank()) {
+            throw new TokenError("invalid_request", "missing code");
+        }
+        if (redirectUri == null || redirectUri.isBlank()) {
+            throw new TokenError("invalid_request", "missing redirect_uri");
+        }
+        if (clientId == null || clientId.isBlank()) {
+            throw new TokenError("invalid_request", "missing client_id");
+        }
+        if (codeVerifier == null || codeVerifier.isBlank()) {
+            throw new TokenError("invalid_request", "missing code_verifier");
+        }
+
+        AuthCodeEntry entry;
+        try {
+            entry = tokenCrypto.decode(TokenType.AUTH_CODE, code, AuthCodeEntry.class);
+        } catch (TokenCryptoException e) {
+            throw new TokenError("invalid_grant", "code is invalid or expired", e);
+        }
+
+        if (!entry.mcpClientId().equals(clientId)) {
+            throw new TokenError("invalid_grant", "client_id does not match the issued code");
+        }
+        if (!entry.redirectUri().toString().equals(redirectUri)) {
+            throw new TokenError("invalid_grant", "redirect_uri does not match the issued code");
+        }
+        if (!verifyPkceS256(codeVerifier, entry.codeChallenge())) {
+            throw new TokenError("invalid_grant", "PKCE verification failed");
+        }
+
+        return mintTokens(entry.mcpClientId(), entry.scope(), entry.forgejoTokens(), entry.forgejoUser());
+    }
+
+    private TokenResponse refreshTokenGrant(@Nullable String refreshToken, @Nullable String clientId) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            throw new TokenError("invalid_request", "missing refresh_token");
+        }
+        if (clientId == null || clientId.isBlank()) {
+            throw new TokenError("invalid_request", "missing client_id");
+        }
+
+        RefreshTokenEntry entry;
+        try {
+            entry = tokenCrypto.decode(TokenType.REFRESH_TOKEN, refreshToken, RefreshTokenEntry.class);
+        } catch (TokenCryptoException e) {
+            throw new TokenError("invalid_grant", "refresh_token is invalid or expired", e);
+        }
+
+        if (!entry.mcpClientId().equals(clientId)) {
+            throw new TokenError("invalid_grant", "client_id does not match the issued refresh_token");
+        }
+
+        ForgejoTokens fresh;
+        try {
+            fresh = forgejoOAuth.refresh(entry.forgejoTokens().refreshToken());
+        } catch (UpstreamFailure e) {
+            // RFC 6749 §5.2: surface upstream refresh failure as invalid_grant so the client re-authorizes.
+            throw new TokenError("invalid_grant", "upstream refresh failed", e);
+        }
+
+        return mintTokens(entry.mcpClientId(), entry.scope(), fresh, entry.forgejoUser());
+    }
+
+    private TokenResponse mintTokens(
+            String mcpClientId, List<String> scope, ForgejoTokens forgejoTokens, ForgejoUser forgejoUser) {
+        Instant now = Instant.now();
+        // Broker AT TTL is capped by the upstream Forgejo AT lifetime so a single decode covers the call.
+        Instant atExpires = earliest(now.plus(broker.accessTokenTtl()), forgejoTokens.accessExpiresAt());
+        Instant rtExpires = now.plus(broker.refreshTokenTtl());
+
+        AccessTokenEntry at = new AccessTokenEntry(mcpClientId, scope, forgejoTokens, forgejoUser, atExpires);
+        RefreshTokenEntry rt = new RefreshTokenEntry(mcpClientId, scope, forgejoTokens, forgejoUser, rtExpires);
+        String atToken = tokenCrypto.encode(TokenType.ACCESS_TOKEN, at);
+        String rtToken = tokenCrypto.encode(TokenType.REFRESH_TOKEN, rt);
+
+        long expiresIn = Math.max(0, atExpires.getEpochSecond() - now.getEpochSecond());
+        return new TokenResponse(atToken, "Bearer", expiresIn, rtToken, String.join(" ", scope));
+    }
+
+    private static Instant earliest(Instant a, Instant b) {
+        return a.isefore(b) ? a : b;
+    }
+
+    private static boolean verifyPkceS256(String verifier, String expectedChallenge) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(verifier.getBytes(StandardCharsets.US_ASCII));
+            String computed = Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
+            return MessageDigest.isEqual(
+                    computed.getBytes(StandardCharsets.US_ASCII),
+                    expectedChallenge.getBytes(StandardCharsets.US_ASCII));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
     }
 }

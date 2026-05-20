@@ -21,21 +21,3 @@ The project uses Java 25.
 ./mvnw -Pquality verify      # full: Error Prone, NullAway, Spotless, ArchUnit, JaCoCo (70% line)
 ./mvnw -Pquality spotless:apply   # auto-format all sources
 ```
-
-### IntelliJ — formatting
-
-The code style is enforced by Spotless using **palantir-java-format**. The
-build will fail on format drift, so configure IntelliJ to format with the same
-tool to avoid having to run `spotless:apply` after every edit.
-
-1. **Install the plugin**:
-   `Settings → Plugins → Marketplace`, search for *palantir-java-format*,
-   install, restart.
-
-2. **Enable for this project**:
-   `Settings → palantir-java-format → Enable palantir-java-format`.
-   IntelliJ's `Reformat Code` (Ctrl+Alt+L / ⌥⌘L) and the on-save reformat
-   action will now produce the same output as `mvn spotless:apply`.
-
-3. **(Optional) Enable on-save formatting**:
-   `Settings → Tools → Actions on Save → Reformat code (Whole file)`.

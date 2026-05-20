@@ -58,14 +58,14 @@ class CimdResolverTest {
     void resolvesValidCimd() {
         String cimdUrl = url("/cimd/claude.json");
         String body = """
-                {
-                  "client_id": "%s",
-                  "client_name": "Claude",
-                  "redirect_uris": ["https://claude.ai/oauth/callback"],
-                  "client_uri": "https://claude.ai",
-                  "contacts": ["security@anthropic.com"]
-                }
-                """.formatted(cimdUrl);
+            {
+              "client_id": "%s",
+              "client_name": "Claude",
+              "redirect_uris": ["https://claude.ai/oauth/callback"],
+              "client_uri": "https://claude.ai",
+              "contacts": ["security@anthropic.com"]
+            }
+            """.formatted(cimdUrl);
         respond("/cimd/claude.json", 200, "application/json", body);
 
         CimdDocument doc = resolver.resolve(cimdUrl);
@@ -81,7 +81,8 @@ class CimdResolverTest {
     void rejectsMismatchedClientId() {
         String cimdUrl = url("/cimd/bad-id.json");
         respond("/cimd/bad-id.json", 200, "application/json", """
-                {"client_id":"https://different.example/client","client_name":"X","redirect_uris":["https://x/cb"]}""");
+            {"client_id":"https://different.example/client","client_name":"X","redirect_uris":["https://x/cb"]}\
+            """);
 
         BadRequest e = assertThrows(BadRequest.class, () -> resolver.resolve(cimdUrl));
         assertTrue(e.getMessage().contains("client_id does not match"), e.getMessage());

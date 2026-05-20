@@ -42,6 +42,22 @@ public class ForgejoOAuthClient {
         return new ForgejoTokens(resp.accessToken(), resp.refreshToken(), expiresAt);
     }
 
+    public ForgejoTokens refresh(String refreshToken) {
+        ForgejoOAuthApi.TokenResponse resp;
+        try {
+            resp = api.refreshAccessToken(
+                    "refresh_token",
+                    refreshToken,
+                    forgejo.oauth().clientId(),
+                    forgejo.oauth().clientSecret());
+        } catch (WebApplicationException e) {
+            throw new UpstreamFailure(
+                    "Forgejo token refresh failed: HTTP " + e.getResponse().getStatus(), e);
+        }
+        Instant expiresAt = Instant.now().plusSeconds(Math.max(0, resp.expiresIn()));
+        return new ForgejoTokens(resp.accessToken(), resp.refreshToken(), expiresAt);
+    }
+
     public ForgejoUser fetchUser(String accessToken) {
         ForgejoOAuthApi.UserResponse u;
         try {

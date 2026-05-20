@@ -29,6 +29,18 @@ class AuthorizeEndpointTest {
     private HttpServer cimdServer;
     private String clientIdUrl;
 
+    private static Map<String, String> parseQuery(String rawQuery) {
+        Map<String, String> out = new HashMap<>();
+        if (rawQuery == null) return out;
+        for (String pair : rawQuery.split("&")) {
+            int eq = pair.indexOf('=');
+            String k = eq < 0 ? pair : pair.substring(0, eq);
+            String v = eq < 0 ? "" : pair.substring(eq + 1);
+            out.put(URLDecoder.decode(k, StandardCharsets.UTF_8), URLDecoder.decode(v, StandardCharsets.UTF_8));
+        }
+        return out;
+    }
+
     @BeforeEach
     void startCimd() throws IOException {
         cimdServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -188,17 +200,5 @@ class AuthorizeEndpointTest {
         URI loc = URI.create(resp.getHeader("Location"));
         Map<String, String> params = parseQuery(loc.getRawQuery());
         assertEquals("invalid_scope", params.get("error"));
-    }
-
-    private static Map<String, String> parseQuery(String rawQuery) {
-        Map<String, String> out = new HashMap<>();
-        if (rawQuery == null) return out;
-        for (String pair : rawQuery.split("&")) {
-            int eq = pair.indexOf('=');
-            String k = eq < 0 ? pair : pair.substring(0, eq);
-            String v = eq < 0 ? "" : pair.substring(eq + 1);
-            out.put(URLDecoder.decode(k, StandardCharsets.UTF_8), URLDecoder.decode(v, StandardCharsets.UTF_8));
-        }
-        return out;
     }
 }

@@ -127,12 +127,27 @@ Tests should drive these against the real Forgejo container — including
 following the redirect to Forgejo and POSTing the consent form as the test
 user.
 
-#### 1.4 `/token` (auth_code + refresh_token grants)
+#### 1.4 `/token` (auth_code + refresh_token grants) — DONE
 
-`POST /token` — validate code, verify PKCE `code_verifier`, mint opaque
-`mcp_access_token` + `mcp_refresh_token`, persist, return per RFC 6749. Refresh
-grant rotates refresh + mints a new access. Tests for both grants + error cases
-(bad code, expired code, bad PKCE, replayed code).
+- `POST /token` on `OAuthResource` handles both `authorization_code` and
+  `refresh_token` grants. Form-encoded request, JSON `TokenResponse`.
+- PKCE S256 verifier check via `MessageDigest.isEqual` (constant-time).
+- Auth code grant: decode `mcp_ac_*`, match `client_id` + `redirect_uri`,
+  verify PKCE, mint `mcp_at_*` + `mcp_rt_*` from the embedded Forgejo tokens
+  (no upstream call needed — tokens were stashed at callback time).
+- Refresh grant: decode `mcp_rt_*`, match `client_id`, call
+  `ForgejoOAuthClient.refresh(...)` upstream, mint a fresh AT/RT pair.
+- `TokenError` (sealed leaf of `ClientError`) added for RFC 6749 §5.2 JSON
+  error responses; `BrokerExceptionMapper` renders it as 400 with
+  `{error, error_description}`. Upstream refresh failure surfaces as
+  `invalid_grant` so the client re-authorizes.
+- Broker AT lifetime is capped by Forgejo's AT lifetime so a single decode
+  covers the call (no mid-request refresh).
+- `TokenEndpointTest` (10): happy path, missing/unknown grant_type, garbage
+  code, wrong client_id, wrong redirect_uri, wrong code_verifier, expired
+  code, refresh-grant missing token, refresh-grant garbage token. Refresh
+  happy-path is deferred to Phase 1.6 where the full Forgejo dance gives us
+  a real upstream refresh token.
 
 #### 1.5 Bearer auth filter + Forgejo bearer producer
 
@@ -173,16 +188,31 @@ Forgejo OAuth-app registration steps, env vars, Docker deploy notes.
 
 ## Current test count
 
-31/31 green as of stateless-token switch (mid-Phase 1.3 — `/authorize` done,
-`/oauth/callback` happy-path integration test still TODO).
+41/41 green as of Phase 1.4 done (`/token` shipped; `/oauth/callback` and
+refresh-grant happy-paths still deferred to Phase 1.6).
 - `ConfigLoadingTest`: 3
 - `ForgejoTestResourceTest`: 4
 - `TokenCryptoTest`: 7
 - `MetadataEndpointsTest`: 2
 - `AuthorizeEndpointTest`: 7
+- `TokenEndpointTest`: 10
 - `CimdResolverTest`: 6
 - `CimdResolverAllowlistTest`: 1
 - `PackageLayoutTest`: 1
+
+## TODO / cleanup
+
+- Evaluate a Quarkus validation extension (Hibernate Validator /
+  `quarkus-hibernate-validator`) for the OAuth endpoints. `OAuthResource`
+  currently does a lot of hand-rolled field-level checks (null/blank, enum-like
+  string matches on `response_type` / `grant_type` / `code_challenge_method`,
+  presence + length on `code`, `code_verifier`, `client_id`, `redirect_uri`).
+  Bean Validation annotations on the query/form params would shrink the methods
+  and centralise the error rendering — but the OAuth spec wants different error
+  shapes for different surfaces (`/authorize` → 302 redirect with
+  `error=invalid_request`; `/token` → 400 JSON `{error, ...}`), so the
+  `ConstraintViolationException` → domain-exception mapping needs designing
+  before we adopt it. Decide before Phase 2.
 
 ## Open decisions / things to pin down later
 

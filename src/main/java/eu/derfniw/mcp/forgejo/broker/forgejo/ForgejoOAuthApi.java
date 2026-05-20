@@ -32,6 +32,16 @@ public interface ForgejoOAuthApi {
             @FormParam("client_id") String clientId,
             @FormParam("client_secret") String clientSecret);
 
+    @POST
+    @Path("/login/oauth/access_token")
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Produces(MediaType.APPLICATION_JSON)
+    TokenResponse refreshAccessToken(
+            @FormParam("grant_type") String grantType,
+            @FormParam("refresh_token") String refreshToken,
+            @FormParam("client_id") String clientId,
+            @FormParam("client_secret") String clientSecret);
+
     @GET
     @Path("/api/v1/user")
     @Produces(MediaType.APPLICATION_JSON)
