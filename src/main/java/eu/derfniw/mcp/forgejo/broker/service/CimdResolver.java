@@ -78,6 +78,12 @@ public class CimdResolver {
         try {
             doc = json.readValue(resp.body(), CimdDocument.class);
         } catch (IOException e) {
+            Log.warnf(
+                    "CIMD parse failed for %s; status=%d, content-type=%s, body=<<%s>>",
+                    clientIdUrl,
+                    resp.statusCode(),
+                    resp.headers().firstValue("content-type").orElse("<none>"),
+                    resp.body());
             throw new CimdValidationError("CIMD body is not valid JSON: " + clientIdUrl, e);
         }
 

@@ -94,7 +94,9 @@ class AuthorizeEndpointTest {
         assertEquals("code", params.get("response_type"));
         assertEquals("test-client-id", params.get("client_id"));
         assertEquals("http://localhost:8081/oauth/callback", params.get("redirect_uri"));
-        assertEquals("read:repository read:issue", params.get("scope"));
+        // Broker injects read:user upstream so it can resolve identity even when the client
+        // didn't request it; downstream effective scope remains read:repository + read:issue.
+        assertEquals("read:repository read:issue read:user", params.get("scope"));
         assertNotNull(params.get("state"), "forgejo-side state must be present");
         assertTrue(params.get("state").length() > 16, "state should be a random id");
     }

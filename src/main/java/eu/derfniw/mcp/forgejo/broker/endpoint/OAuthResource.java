@@ -42,8 +42,9 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -169,6 +170,12 @@ public class OAuthResource {
         }
         List<String> effectiveScopes = requestedScopes.isEmpty() ? advertised : requestedScopes;
 
+        // The broker needs read:user upstream to resolve the Forgejo identity for SecurityIdentity,
+        // regardless of which scopes the downstream client asked for. The downstream effectiveScopes
+        // (returned to the client and stored as roles) still reflect only what was requested.
+        Set<String> upstreamScopes = new LinkedHashSet<>(effectiveScopes);
+        upstreamScopes.add("read:user");
+
         PendingAuth pending = new PendingAuth(
                 clientId,
                 redirect,
@@ -187,7 +194,7 @@ public class OAuthResource {
                 .queryParam("redirect_uri", brokerUris.callbackUri())
                 .queryParam("response_type", "code")
                 .queryParam("state", stateToken)
-                .queryParam("scope", String.join(" ", effectiveScopes))
+                .queryParam("scope", String.join(" ", upstreamScopes))
                 .build();
         Log.debugf("Bouncing user to Forgejo authorize: %s", forgejoAuthorize);
         return Response.status(Response.Status.FOUND).location(forgejoAuthorize).build();
@@ -222,6 +229,8 @@ public class OAuthResource {
             user = forgejoOAuth.fetchUser(tokens.accessToken());
         } catch (UpstreamFailure e) {
             // Forgejo failed; we have enough context to tell the client via the OAuth redirect.
+            // Log the underlying failure so operators can diagnose — the redirect alone is opaque.
+            Log.warnf(e, "Forgejo upstream failed during /oauth/callback; rendering server_error to client");
             throw new OAuthError(pending.redirectUri(), pending.mcpState(), "server_error", "upstream exchange failed");
         }
 
@@ -354,7 +363,7 @@ public class OAuthResource {
     }
 
     private static Instant earliest(Instant a, Instant b) {
-        return a.isefore(b) ? a : b;
+        return a.isBefore(b) ? a : b;
     }
 
     private static boolean verifyPkceS256(String verifier, String expectedChallenge) {
