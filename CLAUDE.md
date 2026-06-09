@@ -5,7 +5,8 @@
 A Quarkus 3.35 / Java 25 MCP server that wraps a Forgejo instance's REST API for
 **read-only context gathering during local dev** (code search, file reads at a
 ref, issues + PRs with comments and diffs, repo/branch/commit/release metadata).
-Plain JSON output, no MCP UI widgets.
+Concise plain-text output tuned for an LLM consumer (one line per record for
+collections, raw decoded text for files) — not JSON, no MCP UI widgets.
 
 Distributable: one deployment per Forgejo instance. The operator registers a
 single confidential OAuth app on Forgejo and supplies `client_id` /

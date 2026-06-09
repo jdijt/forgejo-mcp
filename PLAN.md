@@ -378,6 +378,35 @@ A critical pass over the extracted extension for Quarkus idiom + publishability:
 In order: repo + code search + file read (the headline trio), then issues/PRs
 with comments and diffs, then commits/releases.
 
+#### 3.1 Repo tools (search / metadata / branches / file read) — DONE
+
+- `tools/RepoTools` (`eu.derfniw.mcp.forgejo.tools`) exposes four read-only
+  `@Tool`s (`readOnlyHint = true`): `search_repositories`, `get_repository`,
+  `list_branches`, `read_file`. Each injects `@RestClient ForgejoReposApi` +
+  the broker's `UpstreamBearer` and forwards `upstreamBearer.header()` so Forgejo
+  applies the end user's own access rights.
+- **Output is concise plain text, not JSON** — the consumer is an LLM, so the
+  tools optimize for legibility + token economy over machine parseability. One
+  line per record for collections (`owner/name  (default-branch, visibility)
+  description` for search; `name  sha  message` for branches), a short block for
+  a single repo, and raw decoded UTF-8 for `read_file`. Free-text fields
+  (descriptions, commit messages) are collapsed to a single line so a record
+  never spans lines. `read_file` returns a `ToolResponse` so it can render a
+  friendly `ToolResponse.error` for non-files, non-base64 encodings, or a
+  `WebApplicationException` (e.g. 404); the rest return `String` (quarkus-mcp
+  wraps it as a single text content). `structuredContent` is left off — MCP's
+  machine-readable channel would just double the tokens for an LLM-only consumer.
+- Code search is still deferred — see the Forgejo-code-search note under TODO; no
+  stable per-repo search endpoint yet.
+- `RepoToolsE2ETest` (5) drives the tools over the real MCP protocol via
+  McpAssured's streamable transport against the real Forgejo container. Instead
+  of the full OAuth dance (that's `EndToEndOAuthFlowTest`), it mints a broker
+  `mcp_at_*` bearer directly with `TokenCrypto`, embedding the test user's PAT as
+  the upstream token — so it still exercises the bearer auth mechanism →
+  `UpstreamBearer` → REST client → tool layer end to end. Assertions look for
+  expected tokens in the returned text. Added the `quarkus-mcp-server-test`
+  (McpAssured) test dependency.
+
 ### Phase 4 — Health + observability
 
 `/q/health` (readiness check for Forgejo upstream — the broker itself is
@@ -389,7 +418,8 @@ Forgejo OAuth-app registration steps, env vars, Docker deploy notes.
 
 ## Current test count
 
-52/52 green after the extension extraction + hardening (Phase A/B, A/B.1).
+57/57 green (52 after the extension extraction + hardening, +5 for Phase 3.1
+repo tools).
 
 `oauth-broker/deployment` (`src/test`, 43):
 - `ConfigLoadingTest`: 3
@@ -401,10 +431,11 @@ Forgejo OAuth-app registration steps, env vars, Docker deploy notes.
 - `CimdResolverTest`: 6
 - `CimdResolverAllowlistTest`: 1
 
-`forgejo-mcp` (9):
+`forgejo-mcp` (14):
 - `EndToEndOAuthFlowTest`: 1
 - `ForgejoReposApiTest`: 4
 - `ForgejoTestResourceTest`: 4
+- `RepoToolsE2ETest`: 5
 
 (`PackageLayoutTest` was dropped in the split: −1 vs the old 53.)
 
