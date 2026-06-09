@@ -233,8 +233,145 @@ failure (useful regardless of IT).
 ### Phase 2 — Forgejo REST clients + per-request bearer producer
 
 Typed REST clients for Forgejo (DTOs only for fields we use) + a
-`ForgejoBearerProducer` that pulls the per-request token from the session.
-Thin layer between MCP and Forgejo so tool code stays trivial.
+`ForgejoBearer` request-scoped producer that pulls the per-request token from
+`SecurityIdentity`. Thin layer between MCP and Forgejo so tool code stays
+trivial.
+
+#### 2.0 Per-request bearer producer — DONE
+
+- `broker/forgejo/ForgejoBearer` (`@RequestScoped`): reads the Forgejo bearer
+  off the inbound `SecurityIdentity` (attribute set by
+  `BearerAuthenticationMechanism`), exposes `token()` and `header()` for REST
+  client call sites. Throws `IllegalStateException` on anonymous or
+  missing-attribute identities — both indicate a programming error since MCP
+  paths are bearer-gated by config.
+- Why not `quarkus-rest-client-oidc-token-propagation`: it forwards the
+  *inbound* bearer as-is to the upstream, but the inbound here is the opaque
+  `mcp_at_*` envelope and the upstream needs the Forgejo bearer embedded
+  inside it. Also pulls in `quarkus-oidc` which requires an OIDC upstream
+  Forgejo doesn't provide. A small bespoke producer is the right size.
+- No dedicated unit test — the bean is exercised transitively whenever a
+  REST-client call site reads it, and the existing E2E flow already proves
+  the SecurityIdentity attribute is set correctly on inbound requests.
+
+#### 2.1 Repos REST client (`ForgejoReposApi`) — DONE
+
+- `broker/forgejo/ForgejoReposApi` (`@RegisterRestClient(configKey="forgejo-api")`):
+  `searchRepos`, `getRepo`, `listBranches`, `getContents`. Each method takes
+  `@HeaderParam("Authorization") String bearer` so the call site decides which
+  bearer to forward — production passes `forgejoBearer.header()`, tests pass
+  a fixture PAT. Matches the existing `ForgejoOAuthApi` style. DTO records
+  nested on the interface, `@JsonIgnoreProperties(ignoreUnknown=true)`, only
+  fields we use.
+- `application.properties`: `quarkus.rest-client.forgejo-api.url=${forgejo.base-url}`.
+- `ForgejoTestResource` extended: bootstraps a fixture repo `tester/demo-repo`
+  via the API as `tester` (with `auto_init=true` so we get a `main` branch +
+  a README) and issues a PAT for `tester` via
+  `POST /api/v1/users/tester/tokens`. Static accessors:
+  `testUserPat()`, `DEMO_REPO_OWNER`, `DEMO_REPO_NAME`.
+- `ForgejoReposApiTest` (4): search finds the demo repo, get repo returns
+  expected metadata (name, full_name, default_branch=main, owner), list
+  branches contains main with a non-empty commit sha, get contents on
+  `README.md@main` returns base64 content that mentions the repo name.
+
+Code search (`/repos/{owner}/{repo}/search` doesn't exist in Forgejo's API in
+the simple form; the global indexer endpoint is separate and version-dependent)
+is intentionally deferred — will be revisited when Phase 3's code-search tool
+needs it.
+
+### Phase A/B — Extract OAuth broker into a Quarkus extension — DONE
+
+Split the single module into a multi-module reactor and turned the broker into a
+standalone, publishable Quarkus extension. See the full plan in
+`~/.claude/plans/tranquil-zooming-nebula.md`.
+
+Result:
+
+```
+forgejo/                       parent aggregator (groupId eu.derfniw.mcp.forgejo)
+├── oauth-broker/              extension parent (groupId eu.derfniw.oauthbroker)
+│   ├── runtime/               oauth-broker            (eu.derfniw.oauthbroker.runtime.*)
+│   ├── deployment/            oauth-broker-deployment
+│   └── integration-tests/     generic broker tests, dummy upstream, no Docker
+└── forgejo-mcp/               forgejo-mcp             (eu.derfniw.mcp.forgejo.*)
+```
+
+- **Generic broker, config-driven.** `ForgejoOAuthApi`/`ForgejoOAuthClient`/
+  `ForgejoConfig` are gone. Authorize/token/refresh are standard OAuth2 driven by
+  `broker.upstream.*` (authorize-url, token-url, client-id, client-secret,
+  scopes). `OAuthResource.authorize` builds the redirect from configured scopes —
+  the old inline `read:user` injection is gone (the upstream scope set is just
+  configured to include it).
+- **One SPI:** `spi/UpstreamUserResolver` (user-identity resolution, the only
+  thing OAuth2 doesn't standardize). App implements it as `ForgejoUserResolver`
+  (`GET /api/v1/user` via `ForgejoUserApi`).
+- **Generic models:** `UpstreamTokens`, `UpstreamUser`. Envelope fields and the
+  identity attribute renamed `forgejo*` → `upstream*` (`upstream.bearer`).
+- **Forgejo code moved to the app** under `eu.derfniw.mcp.forgejo.forgejo`:
+  `ForgejoReposApi`, `ForgejoUserApi`, `ForgejoUserResolver`. `ForgejoBearer`
+  became the generic `runtime/security/UpstreamBearer` in the extension.
+- **Tests split:** generic broker tests (Config, TokenCrypto, Authorize,
+  Metadata, Token, BearerAuthMechanism, Cimd*) live in `oauth-broker/
+  integration-tests` with a dummy upstream + `FakeUpstreamUserResolver`; the
+  Forgejo-coupled `EndToEndOAuthFlowTest`, `ForgejoReposApiTest`,
+  `ForgejoTestResourceTest` moved to `forgejo-mcp`.
+- **Neutral namespace:** extension is fully `eu.derfniw.oauthbroker.*` /
+  groupId `eu.derfniw.oauthbroker` with zero "forgejo" references; app stays
+  `eu.derfniw.mcp.forgejo.*`.
+- `PackageLayoutTest` (ArchUnit, leaf-package check) was dropped in the split.
+- Build gotchas: runtime jar needs Jandex indexing for bean discovery;
+  deployment must declare `-deployment` deps for every runtime Quarkus extension.
+
+### Phase A/B.1 — Extension hardening (review follow-up) — DONE
+
+A critical pass over the extracted extension for Quarkus idiom + publishability:
+
+- **Dependency hygiene.** Dropped `quarkus-rest-client-jackson` from the runtime
+  (the broker uses the JDK `HttpClient`; nothing in it is a REST client) and its
+  `-deployment` counterpart. Declared `quarkus-vertx-http` (+ `-deployment`)
+  explicitly since the auth mechanism uses it directly. The app now declares its
+  own `quarkus-rest-client-jackson` (it was leaking transitively from the broker
+  before — caught by the build when removed).
+- **Native reflection.** `OAuthBrokerProcessor` registers the envelope records
+  (`AccessTokenEntry`, `RefreshTokenEntry`, `AuthCodeEntry`, `PendingAuth`,
+  `UpstreamTokens`, `UpstreamUser`) for reflection. They are Jackson-serialized
+  *inside* `TokenCrypto` (encrypted to bytes), so REST-driven auto-registration
+  never covered them — a latent native break.
+- **Build-time SPI check.** The processor fails the build with a pointed message
+  if the app provides no `UpstreamUserResolver`, instead of a generic Arc
+  "Unsatisfied dependency" at runtime.
+- **Code fixes.** Split `IOException`/`InterruptedException` in both HTTP callers
+  and restore the interrupt flag. Dropped the duplicate `upstream.bearer`
+  identity attribute — `UpstreamBearer` now reads the one `AccessTokenEntry`
+  attribute.
+- **Configurable resource path.** `broker.protected-resource-path` (default
+  `/mcp`) drives the advertised resource URI, the `/.well-known/
+  oauth-protected-resource` suffix (now a wildcard endpoint validated against the
+  config), and the 401 challenge — removing the hardcoded "mcp" from the generic
+  broker.
+- **API surface + `model` cleanup.** Split the public data contract
+  (`UpstreamUser`, `UpstreamTokens`) into a new `api` package. Then dissolved the
+  grab-bag `model` package entirely into three focused leaves: `envelope` (the
+  AES-GCM payloads), `dto` (wire JSON records), `error` (the exception
+  hierarchy). Flattened the exceptions: dropped the unused `ClientError` /
+  `ServerError` tiers and the redundant `CimdValidationError` (now `BadRequest`),
+  so `BrokerException` is a flat sealed type with exactly the four leaves the
+  mapper renders (`BadRequest` 400, `OAuthRedirectError` 302 [renamed from
+  `OAuthError`], `TokenError` 400-JSON, `UpstreamFailure` 502). Moved
+  `TokenCryptoException` out of the exception hierarchy into the `crypto` package
+  as a plain technical exception — callers translate it at the boundary (the
+  callback `state`-decode path gained an explicit `catch → BadRequest`). Net
+  behavior change: a `TokenCrypto.encode` failure now surfaces as 500 (correct)
+  instead of the old 400.
+- **Test restructure.** Generic broker `@QuarkusTest`s moved from a standalone
+  `integration-tests` app module into `deployment/src/test` (the idiomatic place
+  — this also retired the `src/main` fake-bean hack). The `integration-tests`
+  module was removed; the fake resolver is a local deployment test bean. The
+  extension ships **no** test-fixtures artifact — a probe resource is tied to
+  whatever path a consumer protects, so each consumer keeps its own local
+  `McpProbeResource` (one in `deployment/src/test`, one in the app's `src/test`).
+
+`./mvnw -Pquality verify` is green (spotless + Error Prone/NullAway + JaCoCo).
 
 ### Phase 3 — MCP tools
 
@@ -252,21 +389,35 @@ Forgejo OAuth-app registration steps, env vars, Docker deploy notes.
 
 ## Current test count
 
-48/48 green as of Phase 1.5 done (`/oauth/callback` and refresh-grant
-happy-paths still deferred to Phase 1.6).
+52/52 green after the extension extraction + hardening (Phase A/B, A/B.1).
+
+`oauth-broker/deployment` (`src/test`, 43):
 - `ConfigLoadingTest`: 3
-- `ForgejoTestResourceTest`: 4
 - `TokenCryptoTest`: 7
-- `MetadataEndpointsTest`: 2
 - `AuthorizeEndpointTest`: 7
+- `MetadataEndpointsTest`: 2
 - `TokenEndpointTest`: 10
 - `BearerAuthMechanismTest`: 7
 - `CimdResolverTest`: 6
 - `CimdResolverAllowlistTest`: 1
-- `PackageLayoutTest`: 1
+
+`forgejo-mcp` (9):
+- `EndToEndOAuthFlowTest`: 1
+- `ForgejoReposApiTest`: 4
+- `ForgejoTestResourceTest`: 4
+
+(`PackageLayoutTest` was dropped in the split: −1 vs the old 53.)
 
 ## TODO / cleanup
 
+- **Aggregate test coverage.** Since the broker's tests live in
+  `oauth-broker/deployment` but the code they cover lives in
+  `oauth-broker/runtime`, per-module JaCoCo no longer gates the runtime logic
+  (the deployment module has `jacoco.skip=true`; the runtime module's check is
+  vacuous with no local tests). Add a `jacoco:report-aggregate` (a small coverage
+  module, or aggregate in deployment over the runtime classes) and move the 70%
+  gate onto the aggregated report so the broker logic is enforced again. App
+  (`forgejo-mcp`) coverage is still gated normally.
 - Evaluate a Quarkus validation extension (Hibernate Validator /
   `quarkus-hibernate-validator`) for the OAuth endpoints. `OAuthResource`
   currently does a lot of hand-rolled field-level checks (null/blank, enum-like
@@ -277,7 +428,30 @@ happy-paths still deferred to Phase 1.6).
   shapes for different surfaces (`/authorize` → 302 redirect with
   `error=invalid_request`; `/token` → 400 JSON `{error, ...}`), so the
   `ConstraintViolationException` → domain-exception mapping needs designing
-  before we adopt it. Decide before Phase 2.
+  before we adopt it. Deferred at the start of Phase 2 — revisit after Phase 2
+  ships.
+- Forgejo code search: no stable `/repos/{owner}/{repo}/search` endpoint exists;
+  the global code indexer is feature-flagged and version-dependent. Decide
+  before Phase 3's code-search tool: pin a Forgejo version, fall back to
+  per-repo grep, or skip code-search until upstream stabilises.
+- Revisit the REST-client bearer pattern: switch from explicit
+  `@HeaderParam("Authorization")` on every method to a `ClientRequestFilter`
+  that reads `UpstreamBearer` and attaches the header automatically. The
+  Quarkus-native filter approach keeps the interface methods focused on
+  business arguments and removes the boilerplate from every call site. The
+  current explicit-header style was chosen for test ergonomics (tests pass a
+  fixture PAT directly) — a filter design needs to keep that path open, e.g.
+  by injecting a test-scoped bearer source. Update
+  `project_forgejo_rest_client_pattern.md` and
+  `project_no_oidc_token_propagation.md` once decided.
+- ~~Decide where the Forgejo API client layer belongs.~~ DONE in Phase A/B:
+  the typed REST clients (`ForgejoReposApi`, `ForgejoUserApi`) and the
+  `UpstreamBearer` producer now live in the `forgejo-mcp` app
+  (`eu.derfniw.mcp.forgejo.forgejo`); `UpstreamBearer` is the extension's
+  generic per-request producer. `ForgejoOAuthApi` was dissolved — the OAuth
+  dance is now generic `UpstreamOAuthClient` in the extension, and the only
+  surviving Forgejo-specific OAuth piece (`/api/v1/user`) became
+  `ForgejoUserResolver` (the `UpstreamUserResolver` SPI impl).
 
 ## Open decisions / things to pin down later
 
