@@ -1,0 +1,10 @@
+name: OAuth Broker
+description: Stateless OAuth 2.0 authorization-server broker — confidential client to an upstream provider, AS to downstream clients (CIMD-only), AES-GCM envelope tokens.
+metadata:
+  keywords:
+    - oauth
+    - security
+    - authorization-server
+  categories:
+    - "security"
+  status: "preview"
