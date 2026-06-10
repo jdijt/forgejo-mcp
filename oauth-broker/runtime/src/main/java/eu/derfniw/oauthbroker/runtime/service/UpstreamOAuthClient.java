@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import eu.derfniw.oauthbroker.runtime.api.UpstreamTokens;
 import eu.derfniw.oauthbroker.runtime.config.BrokerConfig;
 import eu.derfniw.oauthbroker.runtime.error.UpstreamFailure;
+import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.io.IOException;
 import java.net.URI;
@@ -82,6 +83,7 @@ public class UpstreamOAuthClient {
         if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
             throw new UpstreamFailure("Upstream " + what + " returned HTTP " + resp.statusCode());
         }
+        Log.debugf("Upstream %s succeeded (HTTP %d)", what, resp.statusCode());
 
         JsonNode body;
         try {

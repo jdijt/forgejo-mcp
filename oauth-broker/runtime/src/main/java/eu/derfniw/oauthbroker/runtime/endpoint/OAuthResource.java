@@ -240,6 +240,8 @@ public class OAuthResource {
             throw new OAuthRedirectError(
                     pending.redirectUri(), pending.mcpState(), "server_error", "upstream exchange failed");
         }
+        Log.infof(
+                "OAuth callback: authenticated upstream user '%s' for client %s", user.login(), pending.mcpClientId());
 
         AuthCodeEntry authCode = new AuthCodeEntry(
                 pending.mcpClientId(),
@@ -307,6 +309,7 @@ public class OAuthResource {
         try {
             entry = tokenCrypto.decode(TokenType.AUTH_CODE, code, AuthCodeEntry.class);
         } catch (TokenCryptoException e) {
+            Log.debugf("Rejecting authorization_code grant: %s", e.getMessage());
             throw new TokenError("invalid_grant", "code is invalid or expired", e);
         }
 
@@ -335,6 +338,7 @@ public class OAuthResource {
         try {
             entry = tokenCrypto.decode(TokenType.REFRESH_TOKEN, refreshToken, RefreshTokenEntry.class);
         } catch (TokenCryptoException e) {
+            Log.debugf("Rejecting refresh_token grant: %s", e.getMessage());
             throw new TokenError("invalid_grant", "refresh_token is invalid or expired", e);
         }
 
@@ -347,6 +351,8 @@ public class OAuthResource {
             fresh = upstreamOAuth.refresh(entry.upstreamTokens().refreshToken());
         } catch (UpstreamFailure e) {
             // RFC 6749 §5.2: surface upstream refresh failure as invalid_grant so the client re-authorizes.
+            // Converted before reaching BrokerExceptionMapper, so log here — this is the only record.
+            Log.warnf(e, "Upstream refresh failed for client %s; responding invalid_grant", clientId);
             throw new TokenError("invalid_grant", "upstream refresh failed", e);
         }
 
@@ -366,6 +372,9 @@ public class OAuthResource {
         String rtToken = tokenCrypto.encode(TokenType.REFRESH_TOKEN, rt);
 
         long expiresIn = Math.max(0, atExpires.getEpochSecond() - now.getEpochSecond());
+        Log.infof(
+                "Issued tokens for user '%s' (client %s, scope [%s])",
+                upstreamUser.login(), mcpClientId, String.join(" ", scope));
         return new TokenResponse(atToken, "Bearer", expiresIn, rtToken, String.join(" ", scope));
     }
 

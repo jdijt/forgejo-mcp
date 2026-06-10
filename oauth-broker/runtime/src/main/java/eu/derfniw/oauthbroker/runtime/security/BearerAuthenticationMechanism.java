@@ -5,6 +5,7 @@ import eu.derfniw.oauthbroker.runtime.crypto.TokenCryptoException;
 import eu.derfniw.oauthbroker.runtime.crypto.TokenType;
 import eu.derfniw.oauthbroker.runtime.envelope.AccessTokenEntry;
 import eu.derfniw.oauthbroker.runtime.service.BrokerUris;
+import io.quarkus.logging.Log;
 import io.quarkus.security.AuthenticationFailedException;
 import io.quarkus.security.identity.IdentityProviderManager;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -59,6 +60,7 @@ public class BearerAuthenticationMechanism implements HttpAuthenticationMechanis
         try {
             entry = tokenCrypto.decode(TokenType.ACCESS_TOKEN, token, AccessTokenEntry.class);
         } catch (TokenCryptoException e) {
+            Log.debugf("Bearer rejected on %s: %s", context.normalizedPath(), e.getMessage());
             return Uni.createFrom().failure(new AuthenticationFailedException("token invalid or expired"));
         }
 
