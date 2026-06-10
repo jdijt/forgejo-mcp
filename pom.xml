@@ -32,6 +32,7 @@
         <enforcer-plugin.version>3.5.0</enforcer-plugin.version>
         <spotless-plugin.version>2.46.1</spotless-plugin.version>
         <palantir-java-format.version>2.90.0</palantir-java-format.version>
+        <bouncycastle.version>1.80</bouncycastle.version>
     </properties>
 
     <dependencyManagement>
@@ -49,6 +50,11 @@
                 <version>${quarkus.platform.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
