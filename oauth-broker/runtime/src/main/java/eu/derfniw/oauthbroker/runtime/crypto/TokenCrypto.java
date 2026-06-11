@@ -45,7 +45,8 @@ public class TokenCrypto {
     public TokenCrypto(BrokerConfig broker, ObjectMapper json) {
         byte[] keyBytes;
         try {
-            keyBytes = B64_DEC.decode(broker.tokenEncryptionKey());
+            var regularB64Dec = Base64.getDecoder();
+            keyBytes = regularB64Dec.decode(broker.tokenEncryptionKey());
         } catch (IllegalArgumentException e) {
             throw new IllegalStateException("broker.token-encryption-key is not valid base64url", e);
         }

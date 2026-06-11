@@ -50,7 +50,7 @@ class AuthorizeEndpointTest {
                 {
                   "client_id": "%s",
                   "client_name": "Test Client",
-                  "redirect_uris": ["%s"]
+                  "redirect_uris": ["%s", "http://127.0.0.1/callback", "http://localhost/callback"]
                 }
                 """.formatted(clientIdUrl, CLIENT_REDIRECT);
         cimdServer.createContext("/cimd.json", exchange -> {
@@ -202,5 +202,38 @@ class AuthorizeEndpointTest {
         URI loc = URI.create(resp.getHeader("Location"));
         Map<String, String> params = parseQuery(loc.getRawQuery());
         assertEquals("invalid_scope", params.get("error"));
+    }
+
+    @Test
+    void loopbackRedirectWithEphemeralPortIsAccepted() {
+        // RFC 8252 §7.3: the CIMD registers http://127.0.0.1/callback (no port); a native client
+        // binds an OS-assigned port at request time. The broker must accept any loopback port.
+        given().redirects()
+                .follow(false)
+                .queryParam("response_type", "code")
+                .queryParam("client_id", clientIdUrl)
+                .queryParam("redirect_uri", "http://127.0.0.1:54321/callback")
+                .queryParam("code_challenge", VALID_CHALLENGE)
+                .queryParam("code_challenge_method", "S256")
+                .when()
+                .get("/authorize")
+                .then()
+                .statusCode(302);
+    }
+
+    @Test
+    void loopbackPortFlexibilityDoesNotIgnorePathMismatch() {
+        // Only the port is flexible — a different path on the loopback host is still rejected.
+        given().redirects()
+                .follow(false)
+                .queryParam("response_type", "code")
+                .queryParam("client_id", clientIdUrl)
+                .queryParam("redirect_uri", "http://127.0.0.1:54321/evil")
+                .queryParam("code_challenge", VALID_CHALLENGE)
+                .queryParam("code_challenge_method", "S256")
+                .when()
+                .get("/authorize")
+                .then()
+                .statusCode(400);
     }
 }

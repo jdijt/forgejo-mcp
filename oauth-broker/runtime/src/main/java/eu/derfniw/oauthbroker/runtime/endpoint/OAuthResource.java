@@ -45,6 +45,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -86,6 +87,41 @@ public class OAuthResource {
     private static List<String> parseScopes(@Nullable String scope) {
         if (scope == null || scope.isBlank()) return List.of();
         return Arrays.stream(scope.trim().split("\\s+")).distinct().toList();
+    }
+
+    /**
+     * Whether {@code requested} is registered in the client's CIMD. An exact match always passes.
+     * Additionally, per RFC 8252 §7.3, a loopback redirect (localhost / 127.0.0.1 / ::1) matches a
+     * registered loopback URI ignoring the port — native clients bind an OS-assigned ephemeral port
+     * at request time, so the authorization server must accept any port on the loopback interface.
+     */
+    private static boolean isRegisteredRedirect(URI requested, List<URI> registered) {
+        if (registered.contains(requested)) {
+            return true;
+        }
+        if (!isLoopbackHost(requested.getHost())) {
+            return false;
+        }
+        return registered.stream().anyMatch(r -> loopbackMatchIgnoringPort(r, requested));
+    }
+
+    private static boolean loopbackMatchIgnoringPort(URI registered, URI requested) {
+        return isLoopbackHost(registered.getHost())
+                && eqIgnoreCase(registered.getScheme(), requested.getScheme())
+                && eqIgnoreCase(registered.getHost(), requested.getHost())
+                && Objects.equals(registered.getPath(), requested.getPath())
+                && Objects.equals(registered.getRawQuery(), requested.getRawQuery());
+    }
+
+    private static boolean isLoopbackHost(@Nullable String host) {
+        return "localhost".equalsIgnoreCase(host)
+                || "127.0.0.1".equals(host)
+                || "::1".equals(host)
+                || "[::1]".equals(host);
+    }
+
+    private static boolean eqIgnoreCase(@Nullable String a, @Nullable String b) {
+        return a == null ? b == null : a.equalsIgnoreCase(b);
     }
 
     @GET
@@ -150,7 +186,7 @@ public class OAuthResource {
         } catch (IllegalArgumentException e) {
             throw new BadRequest("redirect_uri is not a valid URI", e);
         }
-        if (!cimd.redirectUris().contains(redirect)) {
+        if (!isRegisteredRedirect(redirect, cimd.redirectUris())) {
             throw new BadRequest("redirect_uri not registered in client metadata");
         }
 

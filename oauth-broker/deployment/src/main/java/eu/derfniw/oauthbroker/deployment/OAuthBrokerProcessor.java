@@ -2,6 +2,7 @@ package eu.derfniw.oauthbroker.deployment;
 
 import eu.derfniw.oauthbroker.runtime.api.UpstreamTokens;
 import eu.derfniw.oauthbroker.runtime.api.UpstreamUser;
+import eu.derfniw.oauthbroker.runtime.dto.CimdDocument;
 import eu.derfniw.oauthbroker.runtime.envelope.AccessTokenEntry;
 import eu.derfniw.oauthbroker.runtime.envelope.AuthCodeEntry;
 import eu.derfniw.oauthbroker.runtime.envelope.PendingAuth;
@@ -51,6 +52,22 @@ class OAuthBrokerProcessor {
                 .methods()
                 .fields()
                 .reason(OAuthBrokerProcessor.class.getName() + " — Jackson (de)serialized envelope payloads")
+                .build();
+    }
+
+    /**
+     * The CIMD client-metadata document is fetched and parsed by {@code CimdResolver} via a direct
+     * {@code ObjectMapper.readValue} (not through JAX-RS), so — like the envelope payloads — Quarkus's
+     * REST-driven Jackson reflection registration does not cover it. Register it so CIMD resolution
+     * works in a native image.
+     */
+    @BuildStep
+    ReflectiveClassBuildItem cimdDocument() {
+        return ReflectiveClassBuildItem.builder(CimdDocument.class)
+                .constructors()
+                .methods()
+                .fields()
+                .reason(OAuthBrokerProcessor.class.getName() + " — Jackson-parsed CIMD document")
                 .build();
     }
 
